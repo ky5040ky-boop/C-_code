@@ -1,0 +1,74 @@
+#include <Wire.h>
+#include <Adafruit_PN532.h>
+#include <ESP32Servo.h>
+
+// I2Cピンの定義
+#define SDA_PIN 21
+#define SCL_PIN 22
+Adafruit_PN532 nfc(SDA_PIN, SCL_PIN);
+
+// サーボの定義
+Servo myservo;
+int servoPin = 13;
+
+// 許可するカードのUID
+uint8_t authorizedUID[] = { 0xF1, 0xDC, 0x91, 0x5C }; 
+
+void setup() {
+  Serial.begin(115200);
+  
+  // サーボのタイマー割り当て
+  ESP32PWM::allocateTimer(0);
+  myservo.setPeriodHertz(50);
+  
+  // PN532初期化
+  nfc.begin();
+  uint32_t versiondata = nfc.getFirmwareVersion();
+  if (!versiondata) {
+    Serial.println("PN532が見つからない");
+    while (1);
+  }
+  nfc.SAMConfig();
+  Serial.println("カードを待機中...");
+}
+
+void loop() {
+  uint8_t success;
+  uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };
+  uint8_t uidLength;
+
+  // カードを検知
+  success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
+
+  if (success) {
+    Serial.println("カード検知！");...........
+    
+
+    // UID照合処理
+    bool match = true; 
+    for (uint8_t i = 0; i < 4; i++) {
+      if (uid[i] != authorizedUID[i]) {
+        match = false;
+        break;
+      }
+    }
+
+    if (match) {
+      
+      myservo.attach(servoPin, 500, 2400); 
+      
+      myservo.write(90);  
+      delay(4000);        
+      
+      myservo.write(0);   
+      delay(1000);       
+      
+      myservo.detach();   
+
+    } else {
+      Serial.println("認証失敗");
+    }
+    
+    delay(1000); 
+  }
+}
