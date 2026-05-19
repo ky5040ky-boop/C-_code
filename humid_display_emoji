@@ -1,0 +1,79 @@
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <DHT.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET    -1
+#define SCREEN_ADDRESS 0x3C
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+const int DHTPIN = 18;      
+#define DHTTYPE DHT22  
+DHT dht(DHTPIN, DHTTYPE);
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(18, INPUT_PULLUP); 
+  dht.begin();
+
+  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    Serial.println(F("失敗"));
+    for(;;);
+  }
+  
+  display.clearDisplay();
+  display.display();
+  display.setTextColor(SSD1306_WHITE); 
+} 
+
+// 顔を描くための関数
+void drawface(float h) {
+  display.clearDisplay();
+
+  // 顔の輪郭
+  display.drawCircle(64, 32, 30, WHITE);
+  
+  // 40%以下or60%以上なら悲しい顔
+  if (h < 40.0 || h > 60.0) {
+    display.fillCircle(54, 25, 2, WHITE);
+    display.fillCircle(74, 25, 2, WHITE);
+    display.drawCircleHelper(64, 50, 15, 3, WHITE); 
+  } 
+    
+  // 40%以上50%以下なら普通の顔
+  else if (h >= 40.0 && h < 50.0) {
+    display.drawLine(50, 25, 58, 25, WHITE); 
+    display.drawLine(70, 25, 78, 25, WHITE); 
+    display.drawLine(54, 40, 74, 40, WHITE); 
+  } 
+  // 50%以上60%以下なら笑顔
+  else {
+    display.fillCircle(54, 25, 4, WHITE); 
+    display.fillCircle(74, 25, 4, WHITE);
+    display.drawCircleHelper(64, 35, 15, 12, WHITE); 
+  }
+
+  
+  display.setTextSize(1);
+  display.setCursor(95, 50);
+  display.print((int)h); display.print("%");
+
+  display.display(); 
+} 
+
+void loop() {
+  delay(2000);
+
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  if (isnan(h) || isnan(t)) {
+    Serial.println(F("失敗"));
+    return;
+  }
+
+  
+  drawface(h); 
+} 
