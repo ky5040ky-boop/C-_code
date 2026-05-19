@@ -1,0 +1,111 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// LCDのアドレス（0x27 または 0x3F）
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// ESP32のピン設定
+const int joyYPin = 32; 
+
+// カスタムキャラクターデータ
+byte playerChar[8] = {
+  0b01100, 0b01100, 0b00000, 0b01110,
+  0b11101, 0b01110, 0b01010, 0b01010
+};
+
+byte cactusChar[8] = {
+  0b00100, 0b00101, 0b10101, 0b10111,
+  0b11100, 0b00100, 0b00100, 0b00100
+};
+
+// ゲーム変数
+int playerRow = 1;    
+int obsCol = 15;       
+int score = 0;
+int gameSpeed = 250;   
+bool isGameOver = false;
+unsigned long lastMoveTime = 0;
+
+void setup() {
+  Serial.begin(115200);
+
+  // ESP32のI2Cピンを明示的に指定して初期化
+  Wire.begin(21, 22);
+  lcd.init();
+  lcd.backlight();
+  
+  // カスタムキャラの登録
+  lcd.createChar(0, playerChar);
+  lcd.createChar(1, cactusChar);
+
+  // タイトル画面
+  lcd.setCursor(0, 0);
+  lcd.print("Ready? Push UP!");
+  delay(2000);
+  lcd.clear();
+}
+
+void loop() {
+  // ゲームオーバー処理
+  if (isGameOver) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("GAME OVER!");
+    lcd.setCursor(0, 1);
+    lcd.print("Score: ");
+    lcd.print(score);
+    
+    delay(3000);
+    obsCol = 15;
+    score = 0;
+    gameSpeed = 250;
+    isGameOver = false;
+    lcd.clear();
+    return;
+  }
+
+  // ジョイスティックの入力判定
+  int yVal = analogRead(joyYPin);
+
+  if (yVal < 1000 || yVal > 3000) {
+    playerRow = 0; 
+  } else {
+    playerRow = 1; 
+  }
+
+  // 画面の更新
+  if (millis() - lastMoveTime > gameSpeed) {
+    // 古い障害物を消す
+    lcd.setCursor(obsCol, 1);
+    lcd.print(" "); 
+
+    // 障害物を左へ
+    obsCol--; 
+    if (obsCol < 0) {
+      obsCol = 15;
+      score++;
+      if (gameSpeed > 60) gameSpeed -= 15; // スコア上昇でスピードアップ
+    }
+
+    // 当たり判定
+    if (obsCol == 1 && playerRow == 1) {
+      isGameOver = true;
+    }
+
+    // 描画処理
+    if (!isGameOver) {
+      // プレイヤー
+      lcd.setCursor(1, 0);
+      if (playerRow == 0) lcd.write(0); else lcd.print(" ");
+      lcd.setCursor(1, 1);
+      if (playerRow == 1) lcd.write(0); else lcd.print(" ");
+
+      // 障害物
+      lcd.setCursor(obsCol, 1);
+      lcd.write(1);
+    }
+    
+    lastMoveTime = millis();
+  }
+}
