@@ -1,0 +1,74 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <DHT.h>
+
+// OLEDディスプレイの設定
+#define SCREEN_WIDTH 128 // ピクセル数 (幅)
+#define SCREEN_HEIGHT 64 // ピクセル数 (高さ)
+#define OLED_RESET    -1 // リセットピン
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// AM2302の設定
+#define DHTPIN 4      
+#define DHTTYPE DHT22 // AM2302はDHT22と同じでいい
+DHT dht(DHTPIN, DHTTYPE);
+
+void setup() {
+  Serial.begin(115200);
+  
+  // DHT22の初期化
+  dht.begin();
+
+  // OLEDの初期化 
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); 
+  }
+  
+  // ディスプレイのバッファをクリア
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+}
+
+void loop() {
+
+  delay(2000);
+
+  // 湿度と温度の読み取り
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  // 読み取りに失敗していないかチェック
+  if (isnan(h) || isnan(t)) {
+    Serial.println(F("DHTセンサーからの読み取りに失敗しました！"));
+    return;
+  }
+
+  // シリアルモニタへの出力（デバッグ用）
+  Serial.print(F("Humidity: "));
+  Serial.print(h);
+  Serial.print(F("%  Temperature: "));
+  Serial.print(t);
+  Serial.println(F("°C"));
+
+  // OLED表示の更新処理
+  display.clearDisplay();
+
+  // 温度表示
+  display.setTextSize(2);
+  display.setCursor(0, 20);
+  display.print("T: ");
+  display.print(t, 1); 
+  display.print(" C");
+
+  // 湿度表示
+  display.setCursor(0, 45);
+  display.print("H: ");
+  display.print(h, 1);
+  display.print(" %");
+
+  // 画面に描画を反映
+  display.display(); 
+}
