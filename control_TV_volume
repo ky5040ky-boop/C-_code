@@ -1,0 +1,62 @@
+#include <Arduino.h>
+#include <IRremoteESP8266.h>
+#include <IRsend.h>
+
+// ピンの定義
+const uint16_t kIrLed = 4;      
+const uint8_t buttonPin = 14;  
+const uint8_t potPin = 34;     
+
+// 赤外線送信オブジェクト
+IRsend irsend(kIrLed);
+
+// 状態管理用の変数
+int lastButtonState = HIGH;
+int lastPotValue = 0;
+
+// 可変抵抗の感度（この数値分だけ値が変化したら赤外線を送る）
+const int potThreshold = 150; 
+
+void setup() {
+  Serial.begin(115200);
+  irsend.begin();
+  
+  pinMode(buttonPin, INPUT_PULLUP);
+  
+  // 起動時の可変抵抗の初期値を読み取って記憶しておく
+  lastPotValue = analogRead(potPin);
+  
+  Serial.println("System Ready. Button: Power, Potentiometer: Volume");
+}
+
+void loop() {
+  // ボタンから電源オンオフ処理
+  int buttonState = digitalRead(buttonPin);
+
+  if (lastButtonState == HIGH && buttonState == LOW) {
+    Serial.println("Power Toggled!");
+    irsend.sendSony(0xa90, 12, 2);
+    delay(500); 
+  }
+  lastButtonState = buttonState;
+
+  // 音量（可変抵抗）の処理
+  int currentPotValue = analogRead(potPin); 
+
+  if (currentPotValue - lastPotValue > potThreshold) {
+    Serial.println("Volume UP!");
+    irsend.sendSony(0x490, 12, 2); 
+    
+    lastPotValue = currentPotValue; 
+    delay(100); 
+  }
+  else if (lastPotValue - currentPotValue > potThreshold) {
+    Serial.println("Volume DOWN!");
+    irsend.sendSony(0xC90, 12, 2); 
+    
+    lastPotValue = currentPotValue; 
+    delay(100);
+  }
+
+  delay(50);
+}
