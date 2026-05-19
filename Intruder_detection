@@ -1,0 +1,138 @@
+
+#include <Arduino.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+
+const char* SSID     = "〇〇";  // 自分のWi-fi入力する
+const char* PASSWORD = "〇〇";  // WiFiのパスワード入れる
+const String DISCORD_WEBHOOK = "〇〇"; // DiscordのウェブフックURL
+
+// ピン配置
+const int PIN_BUZZER = 4;
+const int PIN_TRIG   = 21;
+const int PIN_ECHO   = 25;
+
+//　ブザー設定
+const int BUZZER_CHANNEL = 0;
+
+// 変数
+long duration;  
+float distance; 
+bool isDangerMode = false; 
+
+// Discord通知関数
+void sendDiscordAlert(String message) {
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFiClientSecure client;
+    client.setInsecure(); 
+
+    HTTPClient http;
+    http.begin(client, DISCORD_WEBHOOK);
+    http.addHeader("Content-Type", "application/json");
+
+    String jsonPayload = "{\"content\": \"" + message + "\"}";
+    
+    // 送信
+    int httpResponseCode = http.POST(jsonPayload);
+
+    if (httpResponseCode > 0) {
+      Serial.print("Discord Sent! Code: ");
+      Serial.println(httpResponseCode);
+    } else {
+      Serial.print("Error sending Discord: ");
+      Serial.println(httpResponseCode);
+    }
+    http.end();
+  }
+}
+
+// 音再生関数
+void playBeep(int freq, int duration_ms, int pause_ms) {
+  ledcWriteTone(BUZZER_CHANNEL, freq);
+  delay(duration_ms);
+  ledcWriteTone(BUZZER_CHANNEL, 0);
+  delay(pause_ms);
+}
+
+void setup() {
+  Serial.begin(115200);
+  
+  pinMode(PIN_TRIG, OUTPUT);
+  pinMode(PIN_ECHO, INPUT);
+
+  // ブザー設定
+  ledcSetup(BUZZER_CHANNEL, 2000, 8);
+  ledcAttachPin(PIN_BUZZER, BUZZER_CHANNEL);
+
+  // まずWiFiにつなぐ
+  Serial.print("Connecting to WiFi");
+  WiFi.begin(SSID, PASSWORD);
+  
+  // WiFi接続待ち
+  int timeout = 0;
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    timeout++;
+    if(timeout > 20) break;
+  }
+  Serial.println("\nWiFi Connected (or Skipped)!");
+
+  // 起動音
+  ledcWriteTone(BUZZER_CHANNEL, 523); delay(100);
+  ledcWriteTone(BUZZER_CHANNEL, 659); delay(100);
+  ledcWriteTone(BUZZER_CHANNEL, 784); delay(100);
+  ledcWriteTone(BUZZER_CHANNEL, 0);   delay(500);
+
+  // 起動通知
+  if (WiFi.status() == WL_CONNECTED) {
+    sendDiscordAlert("システム起動");
+  }
+}
+
+void loop() {
+  // 距離計測
+  digitalWrite(PIN_TRIG, LOW);
+  delayMicroseconds(2);
+  digitalWrite(PIN_TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(PIN_TRIG, LOW);
+  
+  duration = pulseIn(PIN_ECHO, HIGH, 30000); 
+  distance = duration * 0.034 / 2;
+
+  Serial.print("Dist: ");
+  Serial.print(distance);
+  Serial.print(" cm");
+
+  //　制御ロジック
+
+  if (distance >= 60) {
+    // 安全
+    Serial.println(" | Safe");
+    ledcWriteTone(BUZZER_CHANNEL, 0); 
+    isDangerMode = false; 
+    delay(100);
+  
+  } else if (distance >= 40 && distance < 60) {
+    // 注意 (440Hz)
+    Serial.println(" | Caution");
+    playBeep(440, 100, 500);
+    isDangerMode = false;
+  
+  } else if (distance < 40) {
+    if (isDangerMode == false) {
+      playBeep(1200, 20, 20); 
+      sendDiscordAlert("侵入者検知"); 
+      isDangerMode = true; 
+    }
+    // 通常の危険音
+    playBeep(1200, 20, 20); 
+    
+  } else {
+    // エラー時
+    ledcWriteTone(BUZZER_CHANNEL, 0);
+    delay(100);
+  }
+}
