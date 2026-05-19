@@ -1,0 +1,108 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <DHT.h>
+
+const char* SSID = "〇〇"; //自分のWifi     
+const char* PASSWORD = "〇〇"; //Wifiのパスワード
+const char* LINE_TOKEN = "〇〇";　//LINEのトークンURL
+
+#define DHTPIN 18     
+#define DHTTYPE DHT22　//AM2302はこれ
+
+const float HUMIDITY_THRESHOLD = 65.0; 
+const unsigned long NOTIFY_INTERVAL = 3600000; 
+
+DHT dht(DHTPIN, DHTTYPE);
+WiFiClientSecure client;
+unsigned long lastNotifyTime = 0; 
+
+
+void sendLineMessage(float humidity, float temperature) {
+  const char* host = "api.line.me";
+  const int httpsPort = 443;
+
+  client.setInsecure(); 
+
+  Serial.println("LINE接続中");
+ 
+  client.setTimeout(5000); 
+
+  if (!client.connect(host, httpsPort)) {
+    Serial.println("失敗");
+    return;
+  }
+
+  // JSON内の改行をしっかりエスケープ
+  String message = "現在の湿度: " + String(humidity, 1) + "%\\n" +
+                   "現在の室温: " + String(temperature, 1) + "度";
+  
+  String jsonPayload = "{\"messages\":[{\"type\":\"text\",\"text\":\"" + message + "\"}]}";
+
+  // HTTPリクエストの送信
+  client.print("POST /v2/bot/message/broadcast HTTP/1.1\r\n");
+  client.print("Host: " + String(host) + "\r\n");
+  client.print("Authorization: Bearer " + String(LINE_TOKEN) + "\r\n");
+  client.print("Content-Type: application/json\r\n");
+  client.print("Content-Length: " + String(jsonPayload.length()) + "\r\n");
+  client.print("Connection: close\r\n"); 
+  client.print("\r\n");
+  client.print(jsonPayload);
+
+  // レスポンスの確認
+  while (client.connected()) {
+    String header = client.readStringUntil('\n');
+    if (header.startsWith("HTTP/1.1")) {
+      Serial.println("Response: " + header);
+    }
+    if (header == "\r") break;
+  }
+  
+  client.stop(); 
+  Serial.println("送信処理完了。");
+}
+
+void setup() {
+  Serial.begin(115200);
+  dht.begin();
+
+  Serial.print("Connecting to WiFi");
+  WiFi.begin(SSID, PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi Connected.");
+}
+
+void loop() {
+  delay(2000);
+
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  if (isnan(h) || isnan(t)) {
+    Serial.println("センサからデータが読み取れてない");
+    return;
+  }
+
+
+  Serial.print("温度: "); Serial.print(t);
+  Serial.print("C, 湿度: "); Serial.print(h);
+  Serial.println("%");
+
+  if (h <= HUMIDITY_THRESHOLD) {
+    unsigned long currentTime = millis();
+    if (lastNotifyTime == 0 || (currentTime - lastNotifyTime > NOTIFY_INTERVAL)) {
+      Serial.println("条件一致：LINE送信を開始します...");
+      sendLineMessage(h, t);
+      lastNotifyTime = currentTime;
+    } else {
+      Serial.print("待機中。次の送信まであと ");
+      Serial.print((NOTIFY_INTERVAL - (currentTime - lastNotifyTime)) / 1000);
+      Serial.println(" 秒");
+    }
+  } else {
+    Serial.println("湿度は正常");
+  }
+}
