@@ -1,0 +1,107 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h> 
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include "HX711.h"
+
+// --- Wi-Fi設定 ---
+const char* ssid = "〇〇";　//自分のWifi
+const char* password = "〇〇";　//Wifiのパスワード
+const char* webhook_url = "〇〇";　//DiscordのウェブフックURL
+
+// HX711 / OLED設定
+const int LOADCELL_DOUT_PIN = 18; 
+const int LOADCELL_SCK_PIN = 4;
+HX711 scale;
+float calibration_factor = 6840.0; 　//1円を1gとして校正した場合の値入力
+
+#define SCREEN_ADDRESS 0x3C
+Adafruit_SSD1306 display(128, 64, &Wire, -1);
+
+// 通知管理用の変数
+bool is_notified = false; 
+const float THRESHOLD = 1.0; // 1g以上で通知
+
+// Discord送信関数
+void sendDiscordMessage(String message) {
+    if (WiFi.status() == WL_CONNECTED) {
+        WiFiClientSecure client;
+        client.setInsecure(); 
+
+        HTTPClient http;
+        http.begin(client, webhook_url); 
+        http.addHeader("Content-Type", "application/json");
+
+        String jsonPayload = "{\"content\": \"" + message + "\"}";
+        
+        int httpResponseCode = http.POST(jsonPayload);
+        Serial.print("Discord送信結果 (204ならOK): ");
+        Serial.println(httpResponseCode);
+        http.end();
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+
+    // OLED初期化
+    display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
+    display.clearDisplay();
+    display.setTextColor(SSD1306_WHITE);
+    display.print("Connecting Wi-Fi...");
+    display.display();
+
+    // Wi-Fi接続
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("\nWi-Fi Connected!");
+
+    // センサー初期化
+    scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
+    scale.set_scale(calibration_factor);
+    scale.tare(); // 現在の重さを0gにリセット
+
+    display.clearDisplay();
+    display.setCursor(0, 20);
+    display.print("Post System Ready!");
+    display.display();
+    delay(2000);
+}
+
+void loop() {
+    if (scale.is_ready()) {
+        float weight = scale.get_units(10);
+        
+        // 微小なマイナスやノイズを0.00gにする
+        if (weight > -0.2 && weight < 0.2) {
+            weight = 0.0;
+        }
+
+        // OLED表示
+        display.clearDisplay();
+        display.setTextSize(2);
+        display.setCursor(10, 20);
+        display.print(weight, 2);
+        display.print("g");
+        display.display();
+
+        // 通知ロジック
+        if (weight > THRESHOLD && !is_notified) {
+            Serial.println("荷物を検知");
+            sendDiscordMessage("ポストに荷物が届いた！** (" + String(weight, 1) + "g)");
+            is_notified = true; 
+        }
+
+        if (weight < (THRESHOLD / 2) && is_notified) {
+
+            is_notified = false;
+        }
+    }
+    delay(500);
+}
