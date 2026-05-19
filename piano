@@ -1,0 +1,70 @@
+#include <Arduino.h>
+#include <math.h>
+
+const int outputPin = 25; 
+const int inputPins[] = {34, 35, 32, 33, 19, 36, 21, 18}; 
+const int numButtons = 8;
+const unsigned int frequencies[] = {262, 294, 330, 349, 392, 440, 494, 523};
+
+// サイン波テーブル
+uint8_t sineTable[256];
+volatile double phase = 0;
+volatile double phaseIncrement = 0;
+
+// タイマー割り込み用のハンドル
+hw_timer_t * timer = NULL;
+
+// タイマー割り込み関数（音の波形を作る）
+void IRAM_ATTR onTimer() {
+    if (phaseIncrement > 0) {
+        phase += phaseIncrement;
+        if (phase >= 256) phase -= 256;
+        dacWrite(outputPin, sineTable[(int)phase]);
+    } else {
+        dacWrite(outputPin, 128); // 無音時は中心電圧に固定
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+
+    // サイン波テーブルの作成
+    for (int i = 0; i < 256; i++) {
+        sineTable[i] = (uint8_t)(127 * sin(i * 2 * PI / 256) + 128);
+    }
+
+    // 入力ピンの設定
+    for (int i = 0; i < numButtons; i++) {
+        pinMode(inputPins[i], INPUT_PULLUP);
+    }
+
+    // タイマー設定 (Sampling周波数を40kHzに設定)
+    timer = timerBegin(0, 80, true); 
+    timerAttachInterrupt(timer, &onTimer, true);
+    timerAlarmWrite(timer, 25, true); // 25マイクロ秒ごとに割り込み
+    timerAlarmEnable(timer);
+}
+
+void loop() {
+    bool anyKeyPressed = false;
+
+    for (int i = 0; i < numButtons; i++) {
+        // 34, 35番ピンは外付け抵抗がないとここで暴走するので注意！
+        if (digitalRead(inputPins[i]) == LOW) {
+            // 周波数に基づいた位相の増分を計算
+            // phaseIncrement = (Frequency * TableSize) / SamplingRate
+            phaseIncrement = (frequencies[i] * 256.0) / 40000.0;
+            anyKeyPressed = true;
+            
+            Serial.print("Playing: ");
+            Serial.println(frequencies[i]);
+            break; 
+        }
+    }
+
+    if (!anyKeyPressed) {
+        phaseIncrement = 0;
+    }
+    
+    delay(10); // チャタリング防止
+}
