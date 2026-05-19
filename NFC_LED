@@ -1,0 +1,49 @@
+#include <Wire.h>
+#include <SPI.h>
+#include <Adafruit_PN532.h>
+#include<Arduino.h>
+
+#define PN532_IRQ   (2)
+#define PN532_RESET (3)
+
+Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET);
+
+const int ledPin = 8; 
+
+void setup(void) {
+  Serial.begin(115200);
+  while (!Serial) delay(10); 
+
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW); 
+
+  nfc.begin();
+
+  uint32_t versiondata = nfc.getFirmwareVersion();
+  if (!versiondata) {
+    Serial.println("エラー");
+    while (1); 
+  }
+  
+  // モジュールを読み取りモードに設定
+  nfc.SAMConfig();
+  Serial.println("準備完了！NFCタグをタッチしてください。");
+}
+
+void loop(void) {
+  uint8_t success;
+  uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };  
+  uint8_t uidLength;                        
+
+  // タグがタッチされたか確認
+  success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
+  
+  if (success) {
+    digitalWrite(ledPin, HIGH);
+    delay(2000); 
+    
+    digitalWrite(ledPin, LOW);
+    
+    delay(1000); 
+  }
+}
